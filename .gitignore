@@ -1,0 +1,19 @@
+# Node.js 离线安装包体积较大（31 MB），不进仓库，改放 GitHub Releases
+runtime/*.msi
+
+# 真实花名册不要提交（模板文件本身是示例数据，可以保留）
+员工信息模板.csv.bak
+*真实*.csv
+
+# 系统 / 编辑器产物
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# 日志与临时文件
+*.log
+
+# 只忽略仓库根目录的 node_modules；
+# qrlib/node_modules/dijkstrajs 是内嵌 qrcode 库的运行时依赖，必须一起提交，
+# 否则克隆后 bili-helper.js 顶层 require 就会崩（Cannot find module 'dijkstrajs'）
+/node_modules/
