@@ -25,7 +25,7 @@
 
 ## 特性
 
-- **单文件**：主程序只有 `index.html`（约 120 KB），可离线、可放 U 盘、可发邮件
+- **单文件**：主程序只有 `index.html`（约 120 KB），可离线、可放 U盘、可发邮件
 - **零依赖**：不引入任何前端框架或 CDN 资源，断网照常工作
 - **7 种模式**：数字、座位、名单、员工表、分组、权重、B站评论
 - **Material Design 3**：哔哩哔哩标志蓝配色，支持浅色 / 深色主题
@@ -132,6 +132,26 @@ raffle-box/
 
 - [qrcode](https://github.com/soldair/node-qrcode) v1.5.4（MIT）—— 内嵌于 `qrlib/`，用于生成登录二维码，许可见 `qrlib/LICENSE-qrcode.txt`
 - [Node.js](https://nodejs.org/)（MIT）—— 运行本地助手所需，`runtime/` 下的安装包来自官方发布页
+
+---
+
+## 版本与自动更新
+
+- 版本号同时记录在 **`VERSION`** 文件（仓库根目录）和界面右上角（来自 `index.html` 里的 `APP_VERSION` 常量，两处由推送脚本自动同步）。
+- 每次改完代码，双击仓库外的 **`push-to-github.bat`** 即可：脚本自动把补丁号 +1（如 `1.0.0 → 1.0.1`）、提交，并通过 **HTTPS** 推送到 GitHub（首次推送会弹出 GitHub 授权窗，之后凭据被记住）。
+- 脚本自带**网络检测与自动重连**：连不上 GitHub 时每 10 秒重试一次（最多 30 次），连通后自动继续推送；远端若已有新提交（比如你在网页上的改动），会先自动合并再推送，不会覆盖。
+- 若本地已手动提交好版本（没有新改动），脚本只负责推送、不再升号，因此不会空转版本号。
+- 各版本的完整变更记录见 **[`CHANGELOG.md`](CHANGELOG.md)**。
+- 想完全无人值守：以**管理员**身份打开 PowerShell 执行下面一行，注册「每小时自动推送」（无改动则跳过）：
+
+  ```powershell
+  $bat='C:\Users\L10564\WorkBuddy\2026-09-18-09-15-26\push-to-github.bat'
+  $a=New-ScheduledTaskAction -Execute cmd.exe -Argument "/c ""$bat"" silent"
+  $t=New-ScheduledTaskTrigger -Once -At (Get-Date) -RepetitionInterval (New-TimeSpan -Hours 1) -RepetitionDuration ([TimeSpan]::MaxValue)
+  Register-ScheduledTask -TaskName RaffleBoxAutoPush -Action $a -Trigger $t -Force
+  ```
+
+  取消自动推送：`schtasks /Delete /TN RaffleBoxAutoPush`。
 
 ---
 
