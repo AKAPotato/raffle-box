@@ -135,32 +135,6 @@ raffle-box/
 
 ---
 
-## 版本与自动更新
-
-- 版本号同时记录在 **`VERSION`** 文件（仓库根目录）和界面右上角（来自 `index.html` 里的 `APP_VERSION` 常量，两处由推送脚本自动同步）。
-- 每次改完代码，双击仓库外的 **`push-to-github.bat`** 即可：脚本自动把补丁号 +1（如 `1.0.0 → 1.0.1`）、提交，并通过 **HTTPS** 推送到 GitHub（首次推送会弹出 GitHub 授权窗，之后凭据被记住）。
-- 脚本自带**网络检测与自动重连**：连不上 GitHub 时每 10 秒重试一次（最多 30 次），连通后自动继续推送；远端若已有新提交（比如你在网页上的改动），会先自动合并再推送，不会覆盖。
-- 若本地已手动提交好版本（没有新改动），脚本只负责推送、不再升号，因此不会空转版本号。
-- 推送成功后脚本会**自动打 tag 并发 Release**（无需再手动点）：
-  1. 为当前版本号创建并推送 tag（如 `v1.0.1`）；
-  2. 调用 `publish-release.js` 在 GitHub 上创建 Release——**正文自动取自 `CHANGELOG.md` 里该版本的条目**；
-  3. 自动把项目打包成 `raffle-box-v1.0.1.zip` 并上传为附件（不含 `.git` 与 `runtime/` 里的 Node 安装包）。
-- 发版脚本通过本机 **GitHub Desktop 的登录凭据**（`git credential fill`）调用 GitHub API，**不需要另外配置 token**；唯一的要求是本机装有 Node.js，没装则自动跳过发版、保留手动方式的提示。
-- 也可以单独发版（不改代码、只补发 Release / 附件）：在本目录执行 `node publish-release.js`。
-- 各版本的完整变更记录见 **[`CHANGELOG.md`](CHANGELOG.md)**。
-- 想完全无人值守：以**管理员**身份打开 PowerShell 执行下面一行，注册「每小时自动推送」（无改动则跳过）：
-
-  ```powershell
-  $bat='C:\Users\L10564\WorkBuddy\2026-09-18-09-15-26\push-to-github.bat'
-  $a=New-ScheduledTaskAction -Execute cmd.exe -Argument "/c ""$bat"" silent"
-  $t=New-ScheduledTaskTrigger -Once -At (Get-Date) -RepetitionInterval (New-TimeSpan -Hours 1) -RepetitionDuration ([TimeSpan]::MaxValue)
-  Register-ScheduledTask -TaskName RaffleBoxAutoPush -Action $a -Trigger $t -Force
-  ```
-
-  取消自动推送：`schtasks /Delete /TN RaffleBoxAutoPush`。
-
----
-
 ## 许可
 
 [MIT](LICENSE) © 2026 raffle-box contributors
