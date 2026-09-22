@@ -84,6 +84,7 @@ button{font-family:inherit;}
 }
 .brand h1{font-size:20px; font-weight:500; letter-spacing:.1px;}
 .brand p{font-size:12px; color:var(--on-surf-var); letter-spacing:.4px;}
+.brand .ver{font-size:11px; color:var(--on-surf-var); opacity:.72; margin-left:4px; letter-spacing:.4px;}
 
 /* ============ Buttons ============ */
 .icon-btn{
@@ -485,6 +486,7 @@ tr:last-child td{border-bottom:0;}
       <div>
         <h1>随机抽取生成器</h1>
         <p>范围随机 · 座位抽取 · 名单与员工信息抽奖</p>
+        <span class="ver" id="appVer">v1.0.1</span>
       </div>
     </div>
     <div class="spacer"></div>
@@ -581,6 +583,7 @@ const rnd = n => Math.floor(Math.random() * n);
 const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 /* 明细里的网址渲染成可点击链接（如 B 站中奖者的个人主页） */
 const linkify = s => esc(s).replace(/(https?:\/\/[^\s　|"']+)/g, m => `<a class="lnk" href="${m}" target="_blank" rel="noopener">${m}</a>`);
+const APP_VERSION = '1.0.1';
 
 /* ---------------- 图标 ---------------- */
 const ICON = {
@@ -783,8 +786,10 @@ function buildField(fd){
   return wrap;
 }
 
+let lastFieldErr = '';      // 最近一次字段校验错误，供 doDraw 给出准确提示（而不是笼统的「请先完成参数设置」）
 function fieldErr(key, msg){
   const e = $(`.err[data-err="${key}"]`);
+  if(msg) lastFieldErr = msg;
   if(!e) return;
   e.textContent = msg;
   const tf = e.parentElement.querySelector('.tf');
@@ -925,7 +930,12 @@ function renderEmployeeExtra(box){
     c.setAttribute('aria-selected', i < 0);
     updateRemain();
   });
-  $('#reloadEmp').onclick = () => { S.emp = null; S.drawn.employee = new Set(); renderEmployeeExtra($('#params')); };
+  // 同时清掉部门筛选：换一张表后旧部门名通常不存在，残留会让候选池直接变空
+  $('#reloadEmp').onclick = () => {
+    S.emp = null; S.drawn.employee = new Set();
+    if(S.f.employee) S.f.employee.depts = [];
+    renderEmployeeExtra($('#params'));
+  };
   updateRemain();
 }
 $('#fileInput').onchange = e => handleFile(e.target.files[0]);
@@ -1170,7 +1180,13 @@ function buildPool(){
     }
     if(mode === 'share' || mode === 'both') list = list.concat(parseShareList(f.shares));
     if(!list.length) return null;
-    list = list.map((x, i) => Object.assign({}, x, { k:(x.from === 'share' ? 's' : 'c') + ':' + (x.mid || '') + ':' + (x.uname || i) }));
+    // k 必须唯一：关闭「每人只算一次」时同一用户会有多条评论，若共用一个 k，
+    // 「剩余 N / 共 M」和可抽数量都会虚高（重复的条目被当成不同的人）。
+    // 另外记 _pk（按人）：中奖后整人退出，符合「已中奖用户后续不再参与」。
+    list = list.map((x, i) => {
+      const pk = (x.from === 'share' ? 's' : 'c') + ':' + (x.mid || '') + ':' + (x.uname || i);
+      return Object.assign({}, x, { k:pk + '#' + i, _pk:pk });
+    });
     return {items:list, label:'位用户'};
   }
   if(t === 'weight'){
@@ -1190,17 +1206,40 @@ function buildPool(){
 function splitLines(txt){
   return String(txt || '').split(/\r?\n|,|，|;|；|\t/).map(s => s.trim()).filter(Boolean);
 }
+/* 排除已抽项：B站池同一用户的多条评论共享 _pk，中过一次即整人退出（不再占名额）。
+   剩余数按「过滤后的条目数」算，而不是 total - set.size，
+   否则一人多评论时 set.size 与条目数对不上，chip 会和实际可抽数矛盾。 */
+function availItems(items, set){
+  if(!set) return items;
+  return items.filter(x => !set.has(x.k) && !(x._pk && set.has(x._pk)));
+}
 function updateRemain(){
   const chip = $('#remainChip');
   if(S.tpl === 'group'){ chip.textContent = ''; return; }
   const p = buildPool();
   if(!p){ chip.textContent = S.tpl === 'employee' ? '请先导入数据' : ''; return; }
-  const used = fv('exclude') ? drawnSet().size : 0;
   // 小数数字池是「无限池」（items 为 null），不能做减法，否则显示 "剩余 Infinity / 共 Infinity"
-  if(!p.items){ chip.textContent = fv('exclude') ? `候选 不限 · 已排除 ${used}` : '候选 不限'; return; }
-  const total = p.items.length;
-  const left = Math.max(0, total - used);
-  chip.textContent = (fv('exclude') ? `剩余 ${left} / 共 ${total}` : `候选 ${total}`);
+  if(!p.items){
+    const used = fv('exclude') ? drawnSet().size : 0;
+    chip.textContent = fv('exclude') ? `候选 不限 · 已排除 ${used}` : '候选 不限';
+    return;
+  }
+  // 按「人」计数：B站一个用户可能有多条评论（一人只占一个名额），
+  // 用条目数会让「剩余 / 共」虚高，与实际能抽出的人数对不上
+  const cntOf = arr => new Set(arr.map(x => x._pk || x.k)).size;
+  const total = cntOf(p.items);
+  const set = fv('exclude') ? drawnSet() : null;
+  const left = set ? cntOf(availItems(p.items, set)) : total;
+  chip.textContent = (set ? `剩余 ${left} / 共 ${total}` : `候选 ${total}`);
+}
+/* 清除某模板的已抽记录：所有依赖该记录的下游状态都要一起刷新
+   （剩余计数、座位图、奖品按钮文案），否则 UI 会残留旧的「已抽中」标记。
+   之前「重置已抽」按钮和抽完后的「立即重置」各写一遍，后者漏了 drawSeatMap。 */
+function resetDrawn(t){
+  S.drawn[t] = new Set();
+  updateRemain();
+  if(S.tpl === 'seat') drawSeatMap();
+  setDrawBtnState();
 }
 
 /* ---------------- 抽取 ---------------- */
@@ -1211,6 +1250,9 @@ function pickN(pool, n, unique, excludeSet, weighted){
     if(!items.length) return out;
     for(let i = 0; i < n; i++){
       const total = items.reduce((s,x) => s + x.w, 0);
+      // 剩下的候选权重全是 0（= 永不中奖）时停止，否则 total=0 会让 r 恒为 0、
+      // 循环第一个就命中，把「永不中奖」的项强行抽出来（抽满次数时必然触发）
+      if(!(total > 0)) break;
       let r = Math.random() * total, hit = items[items.length-1];
       for(const x of items){ r -= x.w; if(r <= 0){ hit = x; break; } }
       out.push(hit);
@@ -1234,11 +1276,12 @@ function doDraw(){
   if(t === 'group') return drawGroups();
   const f = S.f[t] || {};
   const count = Math.max(1, Number(f.count) || 1);
+  lastFieldErr = '';
   const pool = buildPool();
   if(!pool){
     toast(t === 'employee' ? '请先导入员工数据'
         : t === 'bili' ? '请先拉取评论或导入转发名单'
-        : '请先完成参数设置');
+        : (lastFieldErr || '请先完成参数设置'));
     return;
   }
 
@@ -1264,15 +1307,39 @@ function doDraw(){
 
   const items = pool.items || [];
   if(!items.length){ toast('候选池为空，请检查参数'); return; }
-  const avail = set ? items.filter(x => !set.has(x.k)) : items;
-  if(!avail.length){ toast('所有候选项都已抽完，请点击「重置已抽」', '立即重置', () => { S.drawn[t] = new Set(); updateRemain(); }); return; }
+  const avail = availItems(items, set);
+  if(!avail.length){ toast('所有候选项都已抽完，请点击「重置已抽」', '立即重置', () => resetDrawn(t)); return; }
   const unique = t === 'weight' ? !f.repeat : (f.unique !== false);
-  if(unique && count > avail.length){
-    toast(`最多只能不重复抽取 ${avail.length} 个，已按上限抽取`, '知道了');
+  // 名额按「人」算：B站同一用户的多条评论只占一个名额
+  const slots = new Set(avail.map(x => x._pk || x.k)).size;
+  if(unique && count > slots){
+    toast(`最多只能不重复抽取 ${slots} 个，已按上限抽取`, '知道了');
   }
-  const picks = pickN(items, count, unique, set, !!pool.weighted);
-  if(!picks.length){ toast('没有可抽取的候选项'); return; }
-  picks.forEach(x => set && set.add(x.k));
+  let picks = pickN(items, count, unique, set, !!pool.weighted);
+  if(!picks.length){
+    // 权重池：候选存在但权重全为 0 时不该报「没有可抽取的候选项」
+    toast(t === 'weight' ? '剩余候选项权重均为 0（永不中奖），没有可抽出的奖项'
+                         : '没有可抽取的候选项');
+    return;
+  }
+  if(t === 'weight' && picks.length < count){
+    toast(`有 ${count - picks.length} 个名额未抽出：其余候选项权重为 0（永不中奖）`, '知道了');
+  }
+  // B站：关闭「每人只算一次」时同一用户有多条评论，可能同时被抽中多条。
+  // 一个用户只能占一个中奖名额，重复的用其他未中签用户补齐。
+  if(t === 'bili' && unique && picks.length > 1){
+    const seen = new Set(), kept = [];
+    for(const x of picks){ const pk = x._pk || x.k; if(!seen.has(pk)){ seen.add(pk); kept.push(x); } }
+    if(kept.length < picks.length){
+      for(const x of avail){
+        if(kept.length >= picks.length) break;
+        const pk = x._pk || x.k;
+        if(!seen.has(pk)){ seen.add(pk); kept.push(x); }
+      }
+      picks = kept;
+    }
+  }
+  picks.forEach(x => { if(set){ set.add(x.k); if(x._pk) set.add(x._pk); } });
 
   let results;
   if(t === 'number'){
@@ -1862,7 +1929,12 @@ function parseBiliInput(txt){
   if(m) return { bvid:m[0] };
   m = s.match(/\bav(\d+)\b/i) || s.match(/^\s*(\d{1,12})\s*$/);
   if(m) return { aid:Number(m[1]) };
-  if(/b23\.tv/i.test(s)) return { short:s.match(/https?:\/\/[^\s]+/)[0] };
+  // 短链可能不带协议头（直接粘 "b23.tv/xxx"），此时 match 为 null，
+  // 直接取 [0] 会抛 TypeError 中断整个拉取流程 —— 补上 https:// 再走解析
+  if(/b23\.tv/i.test(s)){
+    const u = (s.match(/https?:\/\/[^\s]+/) || [])[0];
+    return { short: u || ('https://' + s.replace(/^[a-z]+:\/\//i, '').replace(/^\/+/, '')) };
+  }
   return { err:'无法识别，请粘贴 BV 号、av 号或 bilibili.com 视频链接' };
 }
 async function biliResolve(input, onTip){
@@ -2157,11 +2229,12 @@ $('#exportBtn').onclick = () => {
   a.click(); URL.revokeObjectURL(a.href);
   toast('已导出 CSV 文件');
 };
-function csvCell(v){ v = String(v ?? ''); return /[",\n]/.test(v) ? '"' + v.replace(/"/g,'""') + '"' : v; }
+// 必须含 \r：导出用 \r\n 换行，单元格里裸 \r 会让 Excel 错行
+function csvCell(v){ v = String(v ?? ''); return /["\r\n,]/.test(v) ? '"' + v.replace(/"/g,'""') + '"' : v; }
 
 /* ---------------- 动作 ---------------- */
 $('#drawBtn').onclick = () => { roll ? stopRoll() : doDraw(); };   // 手动停止模式下同一按钮即停
-$('#resetBtn').onclick = () => { S.drawn[S.tpl] = new Set(); updateRemain(); if(S.tpl === 'seat') drawSeatMap(); toast('已清除「' + cur().name + '」的已抽取记录'); };
+$('#resetBtn').onclick = () => { resetDrawn(S.tpl); toast('已清除「' + cur().name + '」的已抽取记录'); };
 addEventListener('keydown', e => {
   if((e.ctrlKey || e.metaKey) && e.key === 'Enter'){ e.preventDefault(); roll ? stopRoll() : doDraw(); }
 });
@@ -2215,6 +2288,8 @@ function renderAll(){
   if(S.tpl === 'seat') drawSeatMap();
   setDrawBtnState();          // 切模板后刷新按钮文案（清掉/显示当前奖品）
 }
+const _vEl = document.getElementById('appVer');
+if(_vEl) _vEl.textContent = 'v' + APP_VERSION;
 renderAll();
 </script>
 
