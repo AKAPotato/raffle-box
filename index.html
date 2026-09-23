@@ -200,6 +200,8 @@ input[type=number]{-moz-appearance:textfield;}
 .chip-static .dots::after{content:''; animation:dots 1.2s steps(1) infinite;}
 @keyframes dots{0%{content:'';} 25%{content:'.';} 50%{content:'..';} 75%{content:'...';}}
 .fab-ext:disabled{opacity:.45; cursor:not-allowed; box-shadow:none; transform:none;}
+/* 按钮文案单独成层：奖品名再长也只占一行，末尾省略，不会把按钮撑成两行导致布局跳动 */
+.fab-ext .fab-label{min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;}
 /* 抽取按钮在滚动时切换为停止态 */
 .fab-ext.stop{background:var(--tertiary-cont); color:var(--on-tertiary-cont); animation:pulse 1.5s ease-in-out infinite;}
 @keyframes pulse{
@@ -351,6 +353,16 @@ input[type=number]{-moz-appearance:textfield;}
 @media (prefers-reduced-motion: reduce){
   .rcard .mv.out, .rcard .mv.in{animation-duration:1ms;}
   .rcard.rolling .main{animation:none;}
+  /* 上面两条只管住了文本层。定格位移、卡片入场、座位弹跳、扫光、
+     以及抽取按钮在滚动时的常驻脉冲，对晕动敏感的用户同样不适，一并收敛 */
+  .rcard.settled, .gcard.settled{animation:none;}
+  .rcard.settled::after{animation:none; opacity:0;}
+  .gcard{animation-duration:1ms;}
+  .seat.win.pop{animation:none;}
+  .seat.drawn.pop, .seat.drawn.pop::after{animation:none;}
+  .fab-ext.stop{animation:none;}
+  .gcard.rolling .members, .rcard.rolling .sub{animation:none;}
+  .seat-wrap, .chip-static.rolling{transition:none;}
 }
 
 .gcard{grid-column:1/-1; background:var(--s-c-lowest); border-radius:var(--r-md); padding:14px 16px; border:1px solid var(--outline-var); animation:pop 340ms var(--ease) both;}
@@ -375,12 +387,16 @@ input[type=number]{-moz-appearance:textfield;}
 .seat-wrap.show{display:block;}
 .seat-legend{display:flex; gap:14px; flex-wrap:wrap; font-size:11.5px; color:var(--on-surf-var); margin-bottom:10px;}
 .seat-legend i{display:inline-block; width:12px;height:12px;border-radius:3px; vertical-align:-2px; margin-right:5px;}
-/* 图例色块上画一条删除斜线，和座位图的删除线对应 */
+/* 图例色块上画一条水平删除线，和座位格的贯穿横线一致 */
 .seat-legend .i-drawn{
   background:var(--tertiary-cont); border:1px solid var(--tertiary);
-  background-image:linear-gradient(to top left, transparent 43%, var(--on-tertiary-cont) 43%, var(--on-tertiary-cont) 57%, transparent 57%);
+  background-image:linear-gradient(to bottom, transparent 42%, var(--on-tertiary-cont) 42%, var(--on-tertiary-cont) 58%, transparent 58%);
 }
-.seatmap{display:grid; gap:6px; overflow-x:auto; padding-bottom:6px;}
+/* overflow-x:auto 会把 overflow-y 也强制算成 auto（CSS 规定，visible 不能与之共存），
+   第一排「本次中奖」向上伸出的部分会被容器裁掉。要预留的是动画峰值：
+   描边环外缘距格心 16px（13px 半格 + 3px 环），弹跳峰值 scale(1.22) 时
+   16×1.22-13 ≈ 6.5px → 预留 7px。左右同理，最左/最右列的环也不再被裁。 */
+.seatmap{display:grid; gap:6px; overflow-x:auto; padding:7px 7px 6px;}
 .seat-row{display:flex; align-items:center; gap:6px;}
 .seat-row .rl{width:38px; flex:none; font-size:11.5px; color:var(--on-surf-var); text-align:right;}
 .seat{
@@ -399,12 +415,40 @@ input[type=number]{-moz-appearance:textfield;}
   height:1.6px; margin-top:-.8px; border-radius:1px;
   background:currentColor; opacity:.85;
 }
+/* 静止态刻意不用 transform:scale()：26px × 1.12 = 29.12px 是小数尺寸，
+   文字会被按原有位图拉伸栅格化，动画结束要等合成层重栅格才清晰 —— 肉眼就是「最后糊一下再变清晰」。
+   放大只在弹跳动画的 420ms 内进行，静止态改用描边环 + 阴影表达「突出」，
+   不产生位移也不重排版（outline 不占布局），文字始终按原生分辨率渲染。 */
 .seat.win{
   background:var(--primary); color:var(--on-primary); font-weight:700;
   border:1px solid var(--primary);
-  transform:scale(1.12); box-shadow:var(--sh-1); animation:seatPop 420ms var(--ease);
+  outline:2px solid var(--primary); outline-offset:1px;
+  box-shadow:var(--sh-1);
 }
-@keyframes seatPop{0%{transform:scale(.6);} 60%{transform:scale(1.22);} 100%{transform:scale(1.12);}}
+/* 弹跳只在「本次刚抽中」时播一次。座位图每次重绘都会重建 DOM，
+   若把 animation 挂在 .seat.win 上，改「排数」等参数时每敲一个键都会重播弹跳 */
+.seat.win.pop{animation:seatPop 420ms var(--ease);}
+/* 结束帧写成 none：动画播完必须回到「无 transform」，不能停在小数值上 */
+@keyframes seatPop{0%{transform:scale(.6);} 60%{transform:scale(1.22);} 100%{transform:none;}}
+/* 「历史已抽」出现时同样播一次：只做颜色替换 + 删除线由左向右划出，
+   不做格子弹跳（弹跳是「本次中奖」专属的庆祝反馈，已抽不该再庆祝一次）。
+   同样只挂在 .pop 上（由 JS 判断「这一帧才变成已抽」时才加），避免重绘就重播。
+   注意：DOM 是每帧重建的，新元素没有「旧值」可过渡，颜色渐变只能用 animation 从
+   未选中的配色补到已抽配色，写 transition 是不会有动画的。 */
+.seat.drawn.pop{animation:seatFade 420ms var(--ease);}
+@keyframes seatFade{
+  0%{background:var(--s-c-highest); color:var(--on-surf-var); border-color:transparent;}
+  100%{background:var(--tertiary-cont); color:var(--on-tertiary-cont); border-color:var(--tertiary);}
+}
+/* 由「本次中奖」转来时，上一帧是主色（蓝）。若仍按灰色做起点，会先闪一下灰再变彩 ——
+   起点必须跟随上一帧的真实颜色。JS 判断上一帧是 win 时加 .from-win。 */
+.seat.drawn.pop.from-win{animation-name:seatFadeFromWin;}
+@keyframes seatFadeFromWin{
+  0%{background:var(--primary); color:var(--on-primary); border-color:var(--primary);}
+  100%{background:var(--tertiary-cont); color:var(--on-tertiary-cont); border-color:var(--tertiary);}
+}
+.seat.drawn.pop::after{transform-origin:left center; animation:seatStrikeLine 420ms var(--ease);}
+@keyframes seatStrikeLine{0%{transform:scaleX(0); opacity:0;} 55%{opacity:.85;} 100%{transform:scaleX(1); opacity:.85;}}
 .screen{
   height:8px; border-radius:var(--r-full); margin:0 0 14px 44px;
   background:linear-gradient(90deg, transparent, var(--outline), transparent);
@@ -486,7 +530,7 @@ tr:last-child td{border-bottom:0;}
       <div>
         <h1>随机抽取生成器</h1>
         <p>范围随机 · 座位抽取 · 名单与员工信息抽奖</p>
-        <span class="ver" id="appVer">v1.0.1</span>
+        <span class="ver" id="appVer">v1.0.2</span>
       </div>
     </div>
     <div class="spacer"></div>
@@ -583,7 +627,7 @@ const rnd = n => Math.floor(Math.random() * n);
 const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 /* 明细里的网址渲染成可点击链接（如 B 站中奖者的个人主页） */
 const linkify = s => esc(s).replace(/(https?:\/\/[^\s　|"']+)/g, m => `<a class="lnk" href="${m}" target="_blank" rel="noopener">${m}</a>`);
-const APP_VERSION = '1.0.1';
+const APP_VERSION = '1.0.2';
 
 /* ---------------- 图标 ---------------- */
 const ICON = {
@@ -614,7 +658,7 @@ const TEMPLATES = [
     desc:'按「几排几号」抽取观众座位，可自定义排数、每排座位号，并提供可视化座位图。适用于年会、演出、活动抽奖。',
     fields:[
       {key:'rows', label:'排数', type:'number', def:10, min:1, max:60},
-      {key:'cols', label:'每排座位号', type:'number', def:20, min:1, max:80},
+      {key:'cols', label:'每排座位号', type:'number', def:10, min:1, max:80},
       {key:'count', label:'抽取数量', type:'number', def:1, min:1},
       {key:'rowStart', label:'起始排号', type:'number', def:1},
       {key:'seatStart', label:'起始座位号', type:'number', def:1},
@@ -819,13 +863,32 @@ function detectColumns(headers){
   if(map.name == null) map.name = headers.length > 1 ? 1 : 0;
   return map;
 }
+/* 统计某字符在「引号之外」出现的次数（引号内的 "" 视为转义，不翻转状态） */
+function countOutside(line, ch){
+  let n = 0, inQ = false;
+  for(let i = 0; i < line.length; i++){
+    const c = line[i];
+    if(c === '"'){ if(inQ && line[i+1] === '"') i++; else inQ = !inQ; }
+    else if(!inQ && c === ch) n++;
+  }
+  return n;
+}
 function parseDelimited(text){
   text = String(text).replace(/^\uFEFF/, '').replace(/\r\n?/g, '\n');
-  const first = text.split('\n')[0] || '';
+  // 取首行时要跳过引号内的换行，否则表头被截断，分隔符统计会失真
+  let firstEnd = text.length, q0 = false;
+  for(let i = 0; i < text.length; i++){
+    const c = text[i];
+    if(c === '"'){ if(q0 && text[i+1] === '"') i++; else q0 = !q0; }
+    else if(c === '\n' && !q0){ firstEnd = i; break; }
+  }
+  const first = text.slice(0, firstEnd);
   const cand = [',', '\t', ';', '|'];
   let delim = ',';
   let best = 0;
-  cand.forEach(d => { const n = (first.split(d).length - 1); if(n > best){ best = n; delim = d; } });
+  // 只数引号外的分隔符：表头里出现 "姓名,全名" 这类内容时，
+  // 引号内的逗号会把分隔符误判成逗号，导致整行被当成单独一个字段
+  cand.forEach(d => { const n = countOutside(first, d); if(n > best){ best = n; delim = d; } });
   const rows = []; let row = [], cur = '', inQ = false;
   for(let i = 0; i < text.length; i++){
     const c = text[i];
@@ -1123,9 +1186,27 @@ function loadScript(src){
 }
 
 /* ---------------- 池子构建 ---------------- */
+/* 数值字段读取：区分「留空」与「填 0」。
+   直接写 Number(v) || 1 会把合法的 0 吞成 1（起始排号填 0 不生效），
+   也会把 'abc' 和 '' 混为一谈，所以留空/null/非数字才回退默认值。 */
+function numOr(v, d){ if(v === '' || v == null || String(v).trim() === '') return d; const n = Number(v); return Number.isFinite(n) ? n : d; }
+/* 座位几何：buildPool 与 drawSeatMap 必须共用同一份计算。
+   这两处各写一遍时，只要修了一处就会出现「池子里的座位」与「图上画的座位」对不上
+   （历史上「排数字母超过 26 回落」就是这么修一半的）。 */
+function seatGeom(f){
+  f = f || {};
+  return {
+    rows: Math.max(1, Math.floor(numOr(f.rows, 1))),
+    cols: Math.max(1, Math.floor(numOr(f.cols, 1))),
+    rs: numOr(f.rowStart, 1),
+    ss: numOr(f.seatStart, 1)
+  };
+}
 function buildPool(){
   const t = S.tpl, f = S.f[t] || {};
   if(t === 'number'){
+    // 留空必须判为无效：Number('') 是 0，直接 isFinite 判断会让「清空输入框」变成从 0 开始抽
+    if(f.min === '' || f.min == null || f.max === '' || f.max == null){ fieldErr('min','请输入有效数字'); return null; }
     let min = Number(f.min), max = Number(f.max);
     if(!isFinite(min) || !isFinite(max)){ fieldErr('min','请输入有效数字'); return null; }
     if(min > max) [min, max] = [max, min];
@@ -1138,10 +1219,9 @@ function buildPool(){
     return {items:arr, label:'个数字', numeric:{min,max,dec}};
   }
   if(t === 'seat'){
-    const rows = Math.max(1, Number(f.rows) || 1), cols = Math.max(1, Number(f.cols) || 1);
-    const rs = Number(f.rowStart) || 1, ss = Number(f.seatStart) || 1;
+    const g = seatGeom(f);
     const arr = [];
-    for(let r = 0; r < rows; r++) for(let c = 0; c < cols; c++) arr.push({r: rs + r, c: ss + c, k:(rs+r) + '-' + (ss+c)});
+    for(let r = 0; r < g.rows; r++) for(let c = 0; c < g.cols; c++) arr.push({r: g.rs + r, c: g.ss + c, k:(g.rs+r) + '-' + (g.ss+c)});
     return {items:arr, label:'个座位'};
   }
   if(t === 'namelist'){
@@ -1179,6 +1259,20 @@ function buildPool(){
       list = list.concat(arr);
     }
     if(mode === 'share' || mode === 'both') list = list.concat(parseShareList(f.shares));
+    // 评论 + 转发合并时，同一个人可能既评论又转发（如粘了自己的空间主页链接）。
+    // 若不按「人」去重，该人会变成两条、概率翻倍，还可能在同一轮被抽中两次。
+    // 评论条目带真实 UID 且信息更全（含主页），合并时优先保留评论、丢弃同名转发。
+    if(mode === 'both'){
+      const byKey = new Map();
+      for(const x of list){
+        const num = /^\d{3,12}$/.test(String(x.mid || ''));
+        const key = num ? ('u:' + x.mid) : ('r:' + ((x._pk) || (x.k) || (x.uname + '|' + (x.mid || ''))));
+        const ex = byKey.get(key);
+        if(!ex) byKey.set(key, x);
+        else if(ex.from === 'share' && x.from !== 'share') byKey.set(key, x);  // 评论优先
+      }
+      list = [...byKey.values()];
+    }
     if(!list.length) return null;
     // k 必须唯一：关闭「每人只算一次」时同一用户会有多条评论，若共用一个 k，
     // 「剩余 N / 共 M」和可抽数量都会虚高（重复的条目被当成不同的人）。
@@ -1243,10 +1337,29 @@ function resetDrawn(t){
 }
 
 /* ---------------- 抽取 ---------------- */
+/* 抽不到时清空结果区。
+   否则界面上仍是一上一次的结果，而提示条一闪而过，
+   用户会以为「这次又抽中了同一个人」（抽完后再点尤其容易误解）。 */
+function clearStage(){
+  S.last = [];
+  const stage = $('#stage');
+  if(stage){ stage.className = 'stage'; stage.innerHTML = ''; }
+  const c = $('#counter');
+  if(c) c.textContent = '本次 0 个结果';
+  // 座位模式下不能整块隐藏座位图：抽干后再点一次抽取，整张图凭空消失会让人以为界面坏了。
+  // S.last 已清空 → 重绘后只剩历史「已抽中」标记，正是抽干时该有的样子。
+  if(S.tpl === 'seat') drawSeatMap(false);
+  else { const sw = $('#seatWrap'); if(sw) sw.classList.remove('show'); }
+}
+/* 同一「人」的标识：B站一人多评论共享 _pk，其余池用 k */
+const whoKey = x => x._pk || x.k;
 function pickN(pool, n, unique, excludeSet, weighted){
   const out = [];
   if(weighted){
-    let items = excludeSet ? pool.filter(x => !excludeSet.has(x.k)) : pool.slice();
+    // 必须走 availItems：它同时排除 k 与 _pk。
+    // 只按 k 过滤的话，B站同一用户的其余条目（k 不同、_pk 相同）会漏进来，
+    // 导致「已中奖的人」下一次还能再中一次。
+    let items = excludeSet ? availItems(pool, excludeSet) : pool.slice();
     if(!items.length) return out;
     for(let i = 0; i < n; i++){
       const total = items.reduce((s,x) => s + x.w, 0);
@@ -1256,16 +1369,23 @@ function pickN(pool, n, unique, excludeSet, weighted){
       let r = Math.random() * total, hit = items[items.length-1];
       for(const x of items){ r -= x.w; if(r <= 0){ hit = x; break; } }
       out.push(hit);
-      if(unique) items = items.filter(x => x !== hit);
+      // 按「人」剔除而非按对象引用：两个同名奖项是不同的对象，
+      // 按引用剔除会让同名的那一项再中一次
+      if(unique) items = items.filter(x => whoKey(x) !== whoKey(hit));
       if(!items.length) break;
     }
     return out;
   }
-  let src = pool.slice();
-  if(excludeSet) src = src.filter(x => !excludeSet.has(x.k));
+  let src = excludeSet ? availItems(pool, excludeSet) : pool.slice();
   if(unique){
-    for(let i = src.length - 1; i > 0; i--){ const j = rnd(i + 1); [src[i], src[j]] = [src[j], src[i]]; }
-    return src.slice(0, n);
+    // 先按「人」去重再洗牌取前 n 个。
+    // 直接洗牌取前 n 条是按「条目」去的重：名单里重名的两条 k 相同却是不同对象，
+    // 会被当成两个人各中一次，且与「最多只能不重复抽取 N 个」的提示自相矛盾。
+    const seen = new Set();
+    const uniq = [];
+    for(const x of src){ const key = whoKey(x); if(key == null || seen.has(key)) continue; seen.add(key); uniq.push(x); }
+    for(let i = uniq.length - 1; i > 0; i--){ const j = rnd(i + 1); [uniq[i], uniq[j]] = [uniq[j], uniq[i]]; }
+    return uniq.slice(0, n);
   }
   for(let i = 0; i < n; i++) out.push(src.length ? src[rnd(src.length)] : null);
   return out.filter(Boolean);
@@ -1279,6 +1399,7 @@ function doDraw(){
   lastFieldErr = '';
   const pool = buildPool();
   if(!pool){
+    clearStage();
     toast(t === 'employee' ? '请先导入员工数据'
         : t === 'bili' ? '请先拉取评论或导入转发名单'
         : (lastFieldErr || '请先完成参数设置'));
@@ -1298,7 +1419,7 @@ function doDraw(){
       if(set && set.has(String(v))) continue;
       picks.push(v);
     }
-    if(!picks.length){ toast('可选范围不足，请调整参数或重置已抽记录'); return; }
+    if(!picks.length){ clearStage(); toast('可选范围不足，请调整参数或重置已抽记录'); return; }
     if(f.sort) picks.sort((a,b) => a - b);
     picks.forEach(v => set && set.add(String(v)));
     // 用 toFixed 展示：否则 2.00 会被 Number 吃掉末尾的 0 显示成 "2"，与 1.77 位数不一致
@@ -1306,9 +1427,9 @@ function doDraw(){
   }
 
   const items = pool.items || [];
-  if(!items.length){ toast('候选池为空，请检查参数'); return; }
+  if(!items.length){ clearStage(); toast('候选池为空，请检查参数'); return; }
   const avail = availItems(items, set);
-  if(!avail.length){ toast('所有候选项都已抽完，请点击「重置已抽」', '立即重置', () => resetDrawn(t)); return; }
+  if(!avail.length){ clearStage(); toast('所有候选项都已抽完，请点击「重置已抽」', '立即重置', () => resetDrawn(t)); return; }
   const unique = t === 'weight' ? !f.repeat : (f.unique !== false);
   // 名额按「人」算：B站同一用户的多条评论只占一个名额
   const slots = new Set(avail.map(x => x._pk || x.k)).size;
@@ -1317,6 +1438,7 @@ function doDraw(){
   }
   let picks = pickN(items, count, unique, set, !!pool.weighted);
   if(!picks.length){
+    clearStage();
     // 权重池：候选存在但权重全为 0 时不该报「没有可抽取的候选项」
     toast(t === 'weight' ? '剩余候选项权重均为 0（永不中奖），没有可抽出的奖项'
                          : '没有可抽取的候选项');
@@ -1377,7 +1499,7 @@ function drawGroups(){
   const f = S.f.group || {};
   const want = Math.max(1, Number(f.groups) || 1);
   const names = splitLines(f.names);
-  if(!names.length){ toast('请先填写成员名单'); return; }
+  if(!names.length){ clearStage(); toast('请先填写成员名单'); return; }
   // 组数不能超过人数，否则会出现「0 人」的空组
   const groups = Math.min(want, names.length);
   if(want > names.length) toast(`只有 ${names.length} 人，已按 ${groups} 组分配`);
@@ -1445,8 +1567,10 @@ function present(results){
   S.last = results;
   const stage = $('#stage');
   stage.className = 'stage' + (results.length === 1 && results[0].kind !== 'group' ? ' single' : '');
-  const single = S.tpl === 'seat';
-  $('#seatWrap').classList.toggle('show', false);
+  // 座位图原来在这里被整块隐藏（display:none，无过渡），620ms 后才重新显示 —— 每次抽取都会闪一下。
+  // 但也不能直接显示：那样会把本次中奖座位提前标蓝，等于剧透。
+  // 正确做法：保持可见并立即重绘，只是「本次中奖」先不标（suppressWin），揭晓后再带动画标出。
+  if(S.tpl === 'seat') drawSeatMap(false, true);
 
   stage.innerHTML = results.map((r, i) => {
     if(r.kind === 'group'){
@@ -1581,7 +1705,10 @@ function setDrawBtnState(){
   let label = '开始抽取';
   if(roll) label = '停止并揭晓';
   else if(lines.length) label = lines.length > 1 ? `抽取「${lines[0]}」· 余 ${lines.length - 1}` : `抽取「${lines[0]}」`;
-  btn.innerHTML = (roll ? ICON_STOP : ICON_DRAW) + label;
+  // 奖品名是用户自己填的，必须转义：直接拼进 innerHTML 会被当成标签解析
+  // （奖品叫 <img src=x onerror=...> 时按钮里会真的插入一个元素）。
+  // 同时套一层 .fab-label 做单行省略，超长奖品名不会把按钮撑成两行。
+  btn.innerHTML = (roll ? ICON_STOP : ICON_DRAW) + '<span class="fab-label">' + esc(label) + '</span>';
   btn.classList.toggle('stop', !!roll);
   btn.disabled = false;
 }
@@ -1607,10 +1734,14 @@ function stopRoll(){
   roll = null;
   hideRollingBar();                    // chip 恢复为「本次 N 个结果」
   setDrawBtnState();
-  // 提示条已改为 chip 状态、不再有高度动画，停止后立刻揭晓，响应更跟手
+  ivs.forEach(clearInterval);          // 立刻停掉滚动，别再和新一轮抽取抢帧
+  // 40ms 后揭晓。若这期间用户又点了抽取，present() 会让 drawToken 自增，
+  // 此处必须认令牌后退出：否则旧结果仍会 settle + afterPresent，
+  // 造成历史里多出一条重复记录、B站奖品被多扣一份。
+  const myToken = drawToken;
   cards.forEach((card, i) => {
     setTimeout(() => {
-      clearInterval(ivs[i]);
+      if(myToken !== drawToken) return;
       settle(card, results[i], i === cards.length - 1 ? () => afterPresent(results) : null);
     }, 40);                                 // 所有卡片同帧定格，多组结果同时揭晓
   });
@@ -1664,7 +1795,8 @@ function buildFlickerPool(){
   return { size:0, pick:() => '?' };
 }
 function afterPresent(results){
-  if(S.tpl === 'seat') drawSeatMap();
+  // 揭晓后才标出本次中奖座位并播放弹跳（animate = true）
+  if(S.tpl === 'seat') drawSeatMap(true);
   updateRemain();
   // 奖品队列：本次抽取完成后消耗掉已发出的奖品，按钮自动切到下一个
   if(S.tpl === 'bili') consumePrize(results.length);
@@ -1690,27 +1822,58 @@ function afterPresent(results){
   setTimeout(renderHist, 150);
 }
 
-function drawSeatMap(){
+/* animate:    是否给本次中奖座位播放弹跳动画（仅揭晓后那一次）
+   suppressWin: 抽取滚动期间重绘时用 —— 座位图保持可见、但不标出本次中奖座位（防剧透） */
+/* 上一帧每个座位的展示状态（'' / 'drawn' / 'win'）。
+   座位图每次都是 innerHTML 全量重建，动画只能靠「状态是否在这一帧才变化」来判断该不该播，
+   否则改排数、切主题等任何一次重绘都会把动画重播一遍。 */
+let seatPrevState = new Map();
+function drawSeatMap(animate, suppressWin){
   if(S.tpl !== 'seat') return;
-  const f = S.f.seat || {};
-  const rows = Math.max(1, Number(f.rows) || 1), cols = Math.max(1, Number(f.cols) || 1);
-  const rs = Number(f.rowStart) || 1, ss = Number(f.seatStart) || 1;
+  // 首次切到本模板时 S.f.seat 还是空的（renderAll 里字段是延时渲染的，默认值要等 renderFields
+  // 才懒加载进来），直接读会让 seatGeom 退化成 1×1，只画出 1 个格子 —— 看起来像「没显示座位图」。
+  // 这里显式取一次默认值，保证任何时机调用都按配置的排数/座号绘制。
+  ['rows','cols','rowStart','seatStart','label'].forEach(k => fv(k));
+  const f = S.f.seat || (S.f.seat = {});
+  const g = seatGeom(f);
+  const rows = g.rows, cols = g.cols, rs = g.rs, ss = g.ss;
   const alpha = f.label === 'alpha';
-  const set = fv('exclude') ? drawnSet() : new Set();
-  const win = new Set((S.last || []).filter(r => r._seat).map(r => r._seat.k));
+  const curWin = new Set((S.last || []).filter(r => r._seat).map(r => r._seat.k));
+  // doDraw 在滚动开始前就把本次结果落进了 drawnSet（保证跨次不重复的账目不丢）。
+  // 滚动期间 suppressWin 只压住「本次中奖」高亮还不够：座位已在已抽记录里，
+  // 会被画成「历史已抽」删除线 —— 换个样式照样剧透。
+  // 注意必须先拷贝一份再剔除：drawnSet() 返回的是活的账目 Set，直接 delete 会把
+  // 本次结果从跨次不重复记录里真删掉（抽完剩余数就错了）。
+  const set = suppressWin
+    ? (() => { const c = new Set(fv('exclude') ? drawnSet() : []); curWin.forEach(k => c.delete(k)); return c; })()
+    : (fv('exclude') ? drawnSet() : new Set());
+  const win = suppressWin ? new Set() : curWin;
   // 排数超过 26 时字母用尽，回退成数字，避免出现 [ \ ] 等怪字符（与结果卡保持一致）
   const rl = r => (alpha && r >= 1 && r <= 26) ? String.fromCharCode(64 + r) : String(r);
-  if(rows * cols > 900){ $('#seatWrap').classList.add('show'); $('#seatmap').innerHTML = '<div class="hint">座位过多（>900），已隐藏座位图</div>'; return; }
+  if(rows * cols > 900){ seatPrevState = new Map(); $('#seatWrap').classList.add('show'); $('#seatmap').innerHTML = '<div class="hint">座位过多（>900），已隐藏座位图</div>'; return; }
+  const nextState = new Map();
   $('#seatmap').innerHTML = Array.from({length:rows}, (_, ri) => {
     const r = rs + ri;
     return `<div class="seat-row"><div class="rl">${esc(rl(r))}</div>${Array.from({length:cols}, (_, ci) => {
       const c = ss + ci, k = r + '-' + c;
       const isWin = win.has(k), isDrawn = set.has(k);
-      const cls = isWin ? 'win' : (isDrawn ? 'drawn' : '');
+      const st = isWin ? 'win' : (isDrawn ? 'drawn' : '');
+      // 中奖弹跳由调用方（揭晓那一刻）决定；「历史已抽」则在这一帧才变成已抽时播一次划掉的动画
+      const prevSt = seatPrevState.get(k) || '';
+      const pop = st === 'win' ? !!animate : (st === 'drawn' && prevSt !== 'drawn');
+      nextState.set(k, st);
+      // 从「本次中奖」转来时告诉 CSS 起点是主色，否则动画会先跳成灰色再变彩（闪一下）
+      const cls = st + (pop ? ' pop' : '') + (pop && st === 'drawn' && prevSt === 'win' ? ' from-win' : '');
       const tip = `${rl(r)} 排 ${c} 号 · ${isWin ? '本次中奖' : (isDrawn ? '已抽中' : '可选')}`;
       return `<div class="seat ${cls}" title="${esc(tip)}">${c}</div>`;
     }).join('')}</div>`;
   }).join('');
+  seatPrevState = nextState;          // 每帧重建，缩排/扩排后不留陈旧状态
+  // 动画播完就摘掉 pop：元素回到无 transform 的静止态，合成层随之释放。
+  // 否则仍处在「动画中」的合成策略管理下，那份低分辨率栅格会多存留一段时间。
+  $('#seatmap').querySelectorAll('.seat.pop').forEach(el => {
+    el.addEventListener('animationend', () => el.classList.remove('pop'), { once:true });
+  });
   $('#seatWrap').classList.add('show');
 }
 
