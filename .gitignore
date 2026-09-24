@@ -1,6 +1,3 @@
-# Node.js 离线安装包体积较大（31 MB），不进仓库，改放 GitHub Releases
-runtime/*.msi
-
 # 真实花名册不要提交（模板文件本身是示例数据，可以保留）
 员工信息模板.csv.bak
 *真实*.csv

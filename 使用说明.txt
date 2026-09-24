@@ -11,9 +11,9 @@
 浏览器直接打开网页版时会受跨域限制，需要用随包附带的本地助手中转：
 
 0) 先确认本机有 Node.js（命令行执行 node -v 能看到版本号即可）。
-   没有的话：双击 start-helper.bat，它会打开 runtime 目录里自带的
-   Node.js 24.21.0 LTS 安装包（runtime\node-v24.21.0-x64.msi），
-   一路 Next 装完，再双击一次 start-helper.bat。
+   没有的话，到 Node.js 官网下载 LTS 版本安装：
+   https://nodejs.org/zh-cn/download
+   一路 Next 保持默认装完，再双击一次 start-helper.bat。
    只有 B站抽奖需要 Node，其它 6 种模式不用装。
 
 1) 双击 start-helper.bat
@@ -51,6 +51,5 @@
 【五、文件说明】
   index.html        主程序（单文件，离线可用）
   bili-helper.js    本地助手（B站评论抓取，需 Node.js）
-  start-helper.bat  助手一键启动（检测不到 Node 会自动打开安装包）
+  start-helper.bat  助手一键启动（检测不到 Node 会提示去官网安装）
   qrlib/            扫码登录用的二维码生成库（MIT 许可）
-  runtime/          Node.js 24.21.0 LTS 离线安装包 + 说明（仅 B站抽奖需要）

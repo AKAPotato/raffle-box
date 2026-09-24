@@ -94,9 +94,10 @@ node bili-helper.js
 | `BILI_HELPER_PORT` | 助手监听端口 | 8787 |
 | `BILI_DEBUG` | 设为 1 打印游标推进，便于排查 | 关闭 |
 
-### 没有 Node.js 也没关系
+### 没有 Node.js？去官网装一个
 
-- 仓库 Releases 里附带了 Node.js 24 LTS 的官方离线安装包
+- B站评论抽奖需要 Node.js 18+（LTS 即可），官网下载：<https://nodejs.org/zh-cn/download>
+- 安装一路「Next」保持默认即可，装完重开 `start-helper.bat`
 - 装不了环境时，可用网页内置的「视频页控制台脚本」兜底：
   展开「网络设置与手动导入」→ 复制脚本 → 在视频页 F12 控制台运行 → 把输出的 JSON 粘回「解析粘贴内容」
 
@@ -110,7 +111,6 @@ raffle-box/
 ├── bili-helper.js      本地助手：B站评论抓取 + 扫码登录（零外部依赖）
 ├── start-helper.bat    Windows 一键启动助手
 ├── qrlib/              扫码登录用的二维码生成库（内嵌 qrcode，MIT）
-├── runtime/            Node.js 离线安装包（体积较大，见 Releases）
 ├── docs/               README 截图
 ├── 员工信息模板.csv     员工表导入示例
 └── 使用说明.txt         中文上手说明
@@ -131,7 +131,7 @@ raffle-box/
 ## 第三方组件
 
 - [qrcode](https://github.com/soldair/node-qrcode) v1.5.4（MIT）—— 内嵌于 `qrlib/`，用于生成登录二维码，许可见 `qrlib/LICENSE-qrcode.txt`
-- [Node.js](https://nodejs.org/)（MIT）—— 运行本地助手所需，`runtime/` 下的安装包来自官方发布页
+- [Node.js](https://nodejs.org/)（MIT）—— 运行本地助手所需，请从[官网](https://nodejs.org/zh-cn/download)安装
 
 ---
 

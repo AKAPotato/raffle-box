@@ -15,20 +15,13 @@ if exist "%ProgramFiles%\nodejs\node.exe" (
 echo.
 echo   Node.js was not found on this computer.
 echo.
-if exist "runtime\node-v24.21.0-x64.msi" (
-  echo   An offline installer is bundled with this project:
-  echo       runtime\node-v24.21.0-x64.msi
-  echo.
-  echo   It is being opened now. Finish the setup wizard,
-  echo   then close this window and double-click this file again.
-  echo.
-  start "" "runtime\node-v24.21.0-x64.msi"
-  pause
-  exit /b
-)
-
-echo   Please install Node.js 18+ from https://nodejs.org
-echo   then run this file again.
+echo   Bilibili comment drawing needs Node.js 18+ (LTS is fine).
+echo   Please download and install it from the official website:
+echo.
+echo       https://nodejs.org/zh-cn/download
+echo.
+echo   Keep the default options during setup (this adds node to PATH).
+echo   When finished, close this window and double-click this file again.
 echo.
 pause
 exit /b
