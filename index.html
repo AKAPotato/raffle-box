@@ -330,7 +330,9 @@ input[type=number]{-moz-appearance:textfield;}
   margin-top:10px; padding-top:8px; border-top:1px solid var(--outline-var);
   font-size:11.5px; color:var(--on-surf-var); word-break:break-all; line-height:1.6;
 }
-.rcard.rolling .main{animation:flick 90ms steps(2) infinite; opacity:.85;}
+/* 滚动时的「转轮」观感：主文本竖向微动 + 轻微模糊，像快速转动的轮盘 */
+.rcard.rolling .main{animation:flick 90ms steps(2) infinite, reel 130ms linear infinite; opacity:.85; filter:blur(.3px);}
+@keyframes reel{0%{transform:translateY(-2px);}50%{transform:translateY(2px);}100%{transform:translateY(-2px);}}
 /* 长用户名换行会让卡片高度在 1行/2行 间抖动（带动整行结果卡上下跳）：
    带副标题的卡（B站评论抽奖）主名固定预留两行高度，全程高度稳定 */
 .rcard:has(.sub) .main{min-height:2.5em;}
@@ -352,7 +354,7 @@ input[type=number]{-moz-appearance:textfield;}
 /* 尊重系统「减少动态效果」：直接切换到结果，不做位移与模糊 */
 @media (prefers-reduced-motion: reduce){
   .rcard .mv.out, .rcard .mv.in{animation-duration:1ms;}
-  .rcard.rolling .main{animation:none;}
+  .rcard.rolling .main{animation:none; filter:none;}
   /* 上面两条只管住了文本层。定格位移、卡片入场、座位弹跳、扫光、
      以及抽取按钮在滚动时的常驻脉冲，对晕动敏感的用户同样不适，一并收敛 */
   .rcard.settled, .gcard.settled{animation:none;}
@@ -490,7 +492,7 @@ input[type=number]{-moz-appearance:textfield;}
 
 /* ============ Snackbar ============ */
 .snackbar{
-  position:fixed; left:50%; bottom:24px; transform:translate(-50%, 140%); z-index:60;
+  position:fixed; left:50%; bottom:24px; transform:translate(-50%, 140%); z-index:120;
   background:var(--on-surface); color:var(--surface); padding:14px 16px; border-radius:var(--r-sm);
   box-shadow:var(--sh-3); font-size:13.5px; max-width:min(560px, calc(100vw - 32px));
   display:flex; align-items:center; gap:16px; transition:transform 300ms var(--ease);
@@ -517,6 +519,18 @@ tr:last-child td{border-bottom:0;}
 .fab-ext:active{transform:scale(.98);}
 .fab-ext svg{width:20px;height:20px;fill:currentColor;}
 .kbd{font-size:11px; color:var(--on-surf-var); border:1px solid var(--outline-var); border-radius:4px; padding:1px 5px;}
+
+/* ============ 分享图预览弹窗 ============ */
+.modal{position:fixed; inset:0; z-index:90; display:flex; align-items:center; justify-content:center; padding:20px;}
+.modal[hidden]{display:none;}
+.modal-backdrop{position:absolute; inset:0; background:var(--scrim); backdrop-filter:blur(2px); cursor:pointer;}
+.modal-card{position:relative; z-index:1; width:min(460px, 100%); max-height:88vh; display:flex; flex-direction:column; background:var(--s-c-low); border:1px solid var(--outline-var); border-radius:var(--r-lg); box-shadow:var(--sh-3); overflow:hidden;}
+.modal-head{display:flex; align-items:center; gap:10px; padding:14px 16px; border-bottom:1px solid var(--outline-var);}
+.modal-head h3{font-size:15px; font-weight:500;}
+.modal-head .icon-btn{margin-left:auto;}
+.modal-body{overflow:auto; padding:14px; background:var(--s-c-lowest); display:flex; justify-content:center;}
+.modal-body img{max-width:100%; height:auto; border-radius:var(--r-sm); box-shadow:var(--sh-1);}
+.modal-actions{display:flex; gap:10px; justify-content:flex-end; padding:14px 16px; border-top:1px solid var(--outline-var);}
 </style>
 </head>
 <body>
@@ -530,7 +544,7 @@ tr:last-child td{border-bottom:0;}
       <div>
         <h1>随机抽取生成器</h1>
         <p>范围随机 · 座位抽取 · 名单与员工信息抽奖</p>
-        <span class="ver" id="appVer">v1.0.2</span>
+        <span class="ver" id="appVer">v1.0.4</span>
       </div>
     </div>
     <div class="spacer"></div>
@@ -560,6 +574,13 @@ tr:last-child td{border-bottom:0;}
           <span class="desc">结果定格时喷出彩色纸片；设备性能不足、觉得卡顿时可关闭</span>
         </span>
       </label>
+      <label class="switch-row" id="soundRow">
+        <span class="switch"><input type="checkbox" id="soundOn" checked><span class="track"></span><span class="thumb"></span></span>
+        <span>
+          <span class="txt">抽取音效</span>
+          <span class="desc">抽取与揭晓时播放轻量音效；使用 Web Audio 合成，无需联网，可随时静音</span>
+        </span>
+      </label>
       <div class="actions">
         <button class="fab-ext" id="drawBtn">
           <svg viewBox="0 0 24 24"><path d="M18 4l-4 4h3v4h2V8h3l-4-4zM6 20l4-4H7v-4H5v4H2l4 4zm4-9h4v2h-4v-2zm0-4h4v2h-4V7zm0 8h4v2h-4v-2z"/></svg>
@@ -582,6 +603,9 @@ tr:last-child td{border-bottom:0;}
       </button>
       <button class="btn btn-text" id="exportBtn">
         <svg viewBox="0 0 24 24"><path d="M19 9h-4V3H9v6H5l7 7 7-7zM5 18v2h14v-2H5z"/></svg>导出 CSV
+      </button>
+      <button class="btn btn-text" id="posterBtn">
+        <svg viewBox="0 0 24 24"><path d="M19 5v14H5V5h14m0-2H5c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h14c1.1 0 2-.9 2-2V5c0-1.1-.9-2-2-2zm-7 12l-3-3.5 2-2.5 3 3.5 4-5 2 2.5L13 17zm-4-7a2 2 0 1 0 0-4 2 2 0 0 0 0 4z"/></svg>导出分享图
       </button>
     </div>
     <div id="stage" class="stage">
@@ -615,6 +639,17 @@ tr:last-child td{border-bottom:0;}
 
 <canvas id="confetti" aria-hidden="true"></canvas>
 <div class="snackbar" id="snack"><span id="snackText"></span><b id="snackAction"></b></div>
+<div class="modal" id="posterModal" hidden>
+  <div class="modal-backdrop" id="posterBackdrop"></div>
+  <div class="modal-card">
+    <div class="modal-head"><h3>分享图预览</h3><button class="icon-btn" id="posterClose" title="关闭" aria-label="关闭">&#10005;</button></div>
+    <div class="modal-body"><img id="posterImg" alt="分享图预览"></div>
+    <div class="modal-actions">
+      <button class="btn btn-tonal" id="posterCopy">复制到剪贴板</button>
+      <button class="btn btn-filled" id="posterDownload">下载图片</button>
+    </div>
+  </div>
+</div>
 <input type="file" id="fileInput" accept=".csv,.txt,.tsv,.json,.xlsx,.xls" hidden />
 
 <script>
@@ -627,7 +662,7 @@ const rnd = n => Math.floor(Math.random() * n);
 const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 /* 明细里的网址渲染成可点击链接（如 B 站中奖者的个人主页） */
 const linkify = s => esc(s).replace(/(https?:\/\/[^\s　|"']+)/g, m => `<a class="lnk" href="${m}" target="_blank" rel="noopener">${m}</a>`);
-const APP_VERSION = '1.0.3';
+const APP_VERSION = '1.0.4';
 
 /* ---------------- 图标 ---------------- */
 const ICON = {
@@ -1231,8 +1266,11 @@ function buildPool(){
     if(f.min === '' || f.min == null || f.max === '' || f.max == null){ fieldErr('min','请输入有效数字'); return null; }
     let min = Number(f.min), max = Number(f.max);
     if(!isFinite(min) || !isFinite(max)){ fieldErr('min','请输入有效数字'); return null; }
-    if(min > max) [min, max] = [max, min];
     const dec = Math.max(0, Math.min(6, Number(f.dec) || 0));
+    // 整数区间的端点应是整数：填了小数就四舍五入到最近整数（如 1.5~5.5 → 2~6），
+    // 否则「for(i=min; i<=max; i++)」会生成半整数（x.5），违背「整数区间」语义
+    if(dec === 0){ min = Math.round(min); max = Math.round(max); }
+    if(min > max) [min, max] = [max, min];
     // 可选值个数：整数按步长 1 取；小数按 10^-dec 量化后统计。
     // 不能只判断端点是否为整数 —— 像「0 ~ 1000000000.5」这种写法端点不是整数，
     // 旧代码会走枚举分支，一次生成十亿个对象，界面直接卡死（偶发、只在填了小数端点时出现）。
@@ -1407,6 +1445,8 @@ function flushPending(){
   const p = pendingDraw;
   pendingDraw = null;
   drawToken++;                 // 作废遗留的延时揭晓回调（它们引用的卡片已被移除）
+  stopRollSound();             // 被作废的回调不会再走 settle —— 咔嗒声必须在这里兜底停掉，
+                               // 否则快速连点 / 池抽干时滚动音会永久循环
   afterPresent(p.results, p.tpl);
 }
 /* 抽不到时清空结果区。
@@ -1491,12 +1531,15 @@ function doDraw(){
   if(pool.numeric && (pool.numeric.dec > 0 || pool.numeric.int)){
     const {min,max,dec} = pool.numeric;
     const isInt = !!pool.numeric.int;
-    // 大整数区间按「起始值 + 随机序号」取。
-    // 写成 floor(min + random*(max-min+1)) 在端点非整数时会取到区间外的值
-    // （0.5~3.5 会生成 0，且永远取不到 3.5）。
     const span = pool.numeric.total || 0;
+    const distinct = pool.numeric.total || pool.numeric.distinct || 0;
+    const step = dec > 0 ? Math.pow(10, -dec) : 1;
+    // 按候选索引均匀采样：idx ∈ [0, distinct-1]，值 = min + idx*step。
+    // 旧写法 (min + random*(max-min)).toFixed(dec) 是连续均匀后量化，
+    // 会使对齐到量化点的 1.0 / 2.0 等概率只有相邻值的一半（实测 max/min≈2.27），
+    // 端点非整数时还会越界。改为索引采样后每个候选值严格等概率，且恒落在 [min,max]。
     const gen = () => isInt ? (min + Math.floor(Math.random() * span))
-                            : +(min + Math.random() * (max - min)).toFixed(dec);
+                            : +(min + Math.floor(Math.random() * distinct) * step).toFixed(dec);
     let limit = count;
     // 可抽数量有限（整数区间，或小数按位数量化后）：先按剩余数收敛上限。
     // 否则下面的拒绝采样会在池子接近抽干时长时间空转 —— 表现是「偶尔卡住一下才出结果」。
@@ -1678,6 +1721,8 @@ let drawToken = 0; // 防止连续抽取时上一轮延时继续定格/写历史
 function present(results){
   flushPending();                 // 上一批还没揭晓就被这一批顶掉了：先把它的账结掉
   S.last = results;
+  soundWinPlayed = false;
+  startRollSound();               // 抽取音效：开始滚动即播放
   const stage = $('#stage');
   stage.className = 'stage' + (results.length === 1 && results[0].kind !== 'group' ? ' single' : '');
   // 座位图原来在这里被整块隐藏（display:none，无过渡），620ms 后才重新显示 —— 每次抽取都会闪一下。
@@ -1745,6 +1790,7 @@ function present(results){
     setTimeout(() => {
       clearInterval(iv);
       if(myToken !== drawToken) return;    // 已有新一轮抽取，丢弃本轮
+      stopRollSound();
       settle(card, results[i], i === cards.length - 1 ? () => afterPresent(results) : null);
     }, 620);                                // 所有卡片同帧定格，多组结果同时揭晓
   });
@@ -1788,6 +1834,7 @@ function swapText(box, text){
 /* 定格某个结果卡片：主文本与副标题同时做交叉过渡，礼花与结果同步 */
 function settle(card, r, done){
   card.classList.remove('rolling');
+  if(!soundWinPlayed){ soundWinPlayed = true; playWin(); }   // 揭晓音效只播一次
   if(r.kind === 'group'){
     const membersEl = $('.members', card);
     if(membersEl) membersEl.innerHTML = (r.members || []).map(m => `<span class="m">${esc(m)}</span>`).join('');
@@ -1851,6 +1898,7 @@ function stopRoll(){
   flushPending();
   const { results, cards, ivs, tpl } = roll;
   roll = null;
+  stopRollSound();                     // 停止滚动音
   hideRollingBar();                    // chip 恢复为「本次 N 个结果」
   setDrawBtnState();
   ivs.forEach(clearInterval);          // 立刻停掉滚动，别再和新一轮抽取抢帧
@@ -1873,6 +1921,7 @@ function cancelRoll(){
   const r = roll.results, tpl = roll.tpl;
   roll.ivs.forEach(clearInterval);
   roll = null;
+  stopRollSound();
   hideRollingBar();
   setDrawBtnState();
   afterPresent(r, tpl);
@@ -2116,6 +2165,60 @@ function cfCenter(el){
   if(!el || typeof el.getBoundingClientRect !== 'function') return null;
   const r = el.getBoundingClientRect();
   return { x: r.left + r.width / 2, y: r.top + r.height / 2 };
+}
+
+/* ---------------- 抽取音效（Web Audio 合成，无需联网） ---------------- */
+let actx = null, soundRollIv = null, soundWinPlayed = false;
+function audioCtx(){
+  if(actx) return actx;
+  const AC = (typeof AudioContext !== 'undefined') ? AudioContext
+           : (typeof webkitAudioContext !== 'undefined' ? webkitAudioContext : null);
+  if(!AC) return null;
+  try{ actx = new AC(); }catch(e){ return null; }
+  return actx;
+}
+function tone(freq, t0, dur, type, gain, slideTo){
+  const ac = actx; if(!ac) return;
+  const o = ac.createOscillator(), g = ac.createGain();
+  o.type = type || 'sine'; o.frequency.setValueAtTime(freq, t0);
+  if(slideTo) o.frequency.exponentialRampToValueAtTime(slideTo, t0 + dur);
+  g.gain.setValueAtTime(0.0001, t0);
+  g.gain.exponentialRampToValueAtTime(gain || 0.06, t0 + 0.012);
+  g.gain.exponentialRampToValueAtTime(0.0001, t0 + dur);
+  o.connect(g); g.connect(ac.destination);
+  o.start(t0); o.stop(t0 + dur + 0.02);
+}
+/* 开始抽取：上扬「嗖」声反馈 */
+function playStart(){
+  if(!S.sound) return;
+  const ac = audioCtx(); if(!ac) return;
+  if(ac.state === 'suspended') ac.resume();
+  const t = ac.currentTime;
+  tone(420, t, 0.18, 'triangle', 0.05, 760);
+}
+/* 开始抽取：播放「嗖」声 + 持续轻量「咔嗒」滚动音（节流到 ~110ms，避免连成机枪声） */
+function startRollSound(){
+  if(!S.sound || soundRollIv) return;
+  const ac = audioCtx(); if(!ac) return;
+  if(ac.state === 'suspended') ac.resume();
+  playStart();
+  soundRollIv = setInterval(() => playTick(), 110);
+}
+function stopRollSound(){ if(soundRollIv){ clearInterval(soundRollIv); soundRollIv = null; } }
+/* 滚动中的轻量「咔嗒」声 */
+function playTick(){
+  if(!S.sound) return;
+  const ac = audioCtx(); if(!ac) return;
+  tone(880 + Math.random() * 140, ac.currentTime, 0.05, 'square', 0.022);
+}
+/* 揭晓：双音和弦，比单音更有「中奖」的仪式感 */
+function playWin(){
+  if(!S.sound) return;
+  const ac = audioCtx(); if(!ac) return;
+  if(ac.state === 'suspended') ac.resume();
+  const t = ac.currentTime;
+  tone(660, t, 0.18, 'sine', 0.07);
+  tone(990, t + 0.12, 0.34, 'sine', 0.07);
 }
 
 /* ---------------- B 站评论抽奖 ---------------- */
@@ -2527,10 +2630,252 @@ $('#exportBtn').onclick = () => {
 // 必须含 \r：导出用 \r\n 换行，单元格里裸 \r 会让 Excel 错行
 function csvCell(v){ v = String(v ?? ''); return /["\r\n,]/.test(v) ? '"' + v.replace(/"/g,'""') + '"' : v; }
 
+/* ---------------- 分享图导出（canvas 绘制海报，主题色自适应） ---------------- */
+let lastPosterModel = null;     // 供测试断言
+let posterCanvas = null;        // 复制图片用
+function posterPalette(){
+  const cs = (typeof getComputedStyle === 'function') ? getComputedStyle(document.documentElement) : null;
+  const get = n => cs ? (cs.getPropertyValue(n) || '').trim() : '';
+  const dark = !document.documentElement.dataset.theme || document.documentElement.dataset.theme === 'dark';
+  const fb = dark ? {
+    surface:'#10161a', sChigh:'#262f36', onSurface:'#e1e6ea', onVar:'#c2ccd4',
+    primary:'#00AEEC', onPrimary:'#00344c', primaryCont:'#004b6b', onPrimaryCont:'#c5e9fb',
+    tertiaryCont:'#8d1f4c', onTertiaryCont:'#ffd8e4', outline:'#414d57', gold:'#f5c96b'
+  } : {
+    surface:'#fafcfe', sChigh:'#e4eaef', onSurface:'#171f24', onVar:'#5b6b75',
+    primary:'#00AEEC', onPrimary:'#00344c', primaryCont:'#c6e9fb', onPrimaryCont:'#001f2c',
+    tertiaryCont:'#ffd8e4', onTertiaryCont:'#3f0020', outline:'#c0cad2', gold:'#b8860b'
+  };
+  const map = { surface:'--surface', sChigh:'--s-c-high', onSurface:'--on-surface', onVar:'--on-surf-var',
+    primary:'--primary', onPrimary:'--on-primary', primaryCont:'--primary-cont', onPrimaryCont:'--on-primary-cont',
+    tertiaryCont:'--tertiary-cont', onTertiaryCont:'--on-tertiary-cont', outline:'--outline-var', gold:'--gold' };
+  const out = {};
+  for(const k in map){ const v = get(map[k]); out[k] = v || fb[k]; }
+  return out;
+}
+function bodyFont(){
+  return '"Roboto","Noto Sans SC","PingFang SC","Microsoft YaHei",system-ui,sans-serif';
+}
+function posterMeasure(){
+  try{ const c = document.createElement('canvas'); const x = (typeof c.getContext === 'function') ? c.getContext('2d') : null; return x; }catch(e){ return null; }
+}
+/* 卡片数与行数上限：浏览器 canvas 单边最大 32767px，旧 iOS 总像素约 1670 万；
+   2000 个结果的名单若全画会直接超出画布上限，导出一张空白图。
+   40 张卡（最坏约 260px/张）远在安全区内，超出部分用文字注明。 */
+const POSTER_MAX_CARDS = 40;
+const POSTER_MAX_MAIN_LINES = 3, POSTER_MAX_SUB_LINES = 2, POSTER_MAX_META_LINES = 2, POSTER_MAX_CHIP_LINES = 12;
+/* 截断到指定宽度并补省略号（无法测量时按字符数估算） */
+function truncEllip(mctx, text, maxW, fontPx, weight){
+  const t = String(text ?? '');
+  const wid = s => { if(!mctx) return null; mctx.font = (weight || '400') + ' ' + fontPx + 'px ' + bodyFont();
+    const r = mctx.measureText(s); return (r && typeof r.width === 'number') ? r.width : null; };
+  const w0 = wid(t);
+  if(w0 == null) { const per = Math.max(2, Math.floor(maxW / (fontPx * 0.6))); return t.length <= per ? t : t.slice(0, per - 1) + '…'; }
+  if(w0 <= maxW) return t;
+  let s = t;
+  while(s.length > 1 && wid(s + '…') > maxW) s = s.slice(0, -1);
+  return s + '…';
+}
+/* 换行结果超过 max 行时：保留前 max-1 行，其余内容并入最后一行并截断 */
+function capWraps(lines, max, mctx, fontPx, weight, maxW){
+  if(lines.length <= max) return lines;
+  return lines.slice(0, max - 1).concat([truncEllip(mctx, lines.slice(max - 1).join(''), maxW, fontPx, weight)]);
+}
+function wrapText(mctx, text, maxW, fontPx, weight){
+  const lines = [];
+  const paras = String(text == null ? '' : text).split('\n');
+  const setFont = () => { if(mctx) mctx.font = (weight || '400') + ' ' + fontPx + 'px ' + bodyFont(); };
+  const mw = s => { if(!mctx) return null; setFont(); const r = mctx.measureText(s); return (r && typeof r.width === 'number') ? r.width : null; };
+  for(const para of paras){
+    if(!para){ lines.push(''); continue; }
+    const w0 = mw('M');
+    if(w0 == null){                                   // 无法测量：按字符估算（每字约 fontPx*0.6）
+      const per = Math.max(1, Math.floor(maxW / (fontPx * 0.6)));
+      for(let i = 0; i < para.length; i += per) lines.push(para.slice(i, i + per));
+      continue;
+    }
+    let cur = '';
+    for(const ch of para){
+      const test = cur + ch;
+      if(mw(test) > maxW && cur){ lines.push(cur); cur = ch; } else cur = test;
+    }
+    if(cur) lines.push(cur);
+  }
+  return lines;
+}
+function buildPosterModel(results, tpl){
+  const P = posterPalette();
+  const W = 840, pad = 44, innerW = W - pad * 2;
+  const mctx = posterMeasure();
+  const fontH1 = 34, lh1 = 44, fontSub = 15, lhSub = 22, fontMeta = 12.5, lhMeta = 18;
+  const prizeH = 26, prizeGap = 10, cardPadX = 22, cardPadY = 18, gap = 16, headH = 84;
+  /* 超过上限的结果不画卡片，底部统一注明 —— 画布单边上限 32767px（dpr=2 时约 16000 CSS 像素），
+     2000 个结果全画必然超限导出空白图；40 张卡 × 最坏每张约 220px 仍在安全区 */
+  const shown = results.slice(0, POSTER_MAX_CARDS);
+  const restN = results.length - shown.length;
+  let y = pad + headH;
+  const cards = [];
+  for(const r of shown){
+    if(r.kind === 'group'){
+      /* 标题与人数注记在建模处拼好一起换行 —— 高度账目与绘制内容必须出自同一份布局计算，
+         若绘制时才拼接重新换行，行数可能与模型预留高度不一致导致内容溢出卡片 */
+      const head = (r.title || '分组') + (r.sub ? ' · ' + r.sub
+        : (r.members && r.members.length ? ' · ' + r.members.length + ' 人' : ''));
+      const titleLines = capWraps(wrapText(mctx, head, innerW - cardPadX * 2, fontH1, '600'), POSTER_MAX_MAIN_LINES, mctx, fontH1, '600', innerW - cardPadX * 2);
+      const members = r.members || [];
+      const chipLines = []; let cur = '';
+      const chipW = innerW - cardPadX * 2;
+      for(const m of members){
+        /* 度量统一为绘制字体 400/15px；「· 」前缀绘制侧才加，宽度按 2 个字符（18px）计入 */
+        const add = (cur ? '、' : '') + m;
+        const w = mctx ? (mctx.font = '400 ' + fontSub + 'px ' + bodyFont(), mctx.measureText(add).width + 18) : add.length * fontSub;
+        if(mctx && w > chipW && cur){ chipLines.push(cur); cur = m; } else cur = add;
+      }
+      if(cur) chipLines.push(cur);
+      const chipCap = chipLines.slice(0, POSTER_MAX_CHIP_LINES);
+      if(chipLines.length > chipCap.length)
+        chipCap[chipCap.length - 1] = truncEllip(mctx, chipCap[chipCap.length - 1], chipW, fontSub, '400');
+      const bodyH = titleLines.length * lh1 + 8 + (chipCap.length ? chipCap.length * lhSub + 6 : 0);
+      const h = cardPadY * 2 + bodyH;
+      cards.push({ type:'group', x:pad, y, w:innerW, h, titleLines, chipLines:chipCap, sub:r.sub, membersN: members.length });
+      y += h + gap;
+    } else {
+      const prize = r.prize ? truncEllip(mctx, r.prize, 100, 13, '500') : '';
+      const mainW = innerW - cardPadX * 2 - (prize ? 110 : 0);   /* 奖品行右侧为 chip 让位 */
+      const mainLines = capWraps(wrapText(mctx, r.main || '', mainW, fontH1, '600'), POSTER_MAX_MAIN_LINES, mctx, fontH1, '600', mainW);
+      const subLines = r.sub ? capWraps(wrapText(mctx, r.sub, innerW - cardPadX * 2, fontSub, '400'), POSTER_MAX_SUB_LINES, mctx, fontSub, '400', innerW - cardPadX * 2) : [];
+      const metaLines = r.meta ? capWraps(wrapText(mctx, r.meta, innerW - cardPadX * 2, fontMeta, '400'), POSTER_MAX_META_LINES, mctx, fontMeta, '400', innerW - cardPadX * 2) : [];
+      const bodyH = mainLines.length * lh1 + (subLines.length ? subLines.length * lhSub + 4 : 0)
+                  + (prize ? prizeH + prizeGap : 0) + (metaLines.length ? metaLines.length * lhMeta + 4 : 0);
+      const h = cardPadY * 2 + bodyH;
+      cards.push({ type:'normal', x:pad, y, w:innerW, h, mainLines, subLines, metaLines, prize, badge: results.length > 1 });
+      y += h + gap;
+    }
+  }
+  const restNote = restN > 0 ? `其余 ${restN} 个结果未展示，完整名单可使用「导出 CSV」` : '';
+  const footerH = 54 + (restNote ? 26 : 0);
+  const total = Math.max(360, y - gap + footerH + pad);
+  const t = tmpl(tpl) || cur();
+  return { w:W, h: total, pad, innerW, headH, P,
+    title:'随机抽取生成器', subtitle:(t ? t.name : '抽奖') + ' · 共 ' + results.length + ' 个结果',
+    time: (new Date()).toLocaleString('zh-CN', { hour12:false }), version: APP_VERSION, cards, restNote,
+    fontH1, lh1, fontSub, lhSub, fontMeta, lhMeta, prizeH, prizeGap, cardPadX, cardPadY };
+}
+function rrect(ctx, x, y, w, h, r){
+  if(typeof ctx.roundRect === 'function'){ ctx.beginPath(); ctx.roundRect(x, y, w, h, r); return; }
+  ctx.beginPath(); ctx.moveTo(x + r, y);
+  ctx.arcTo(x + w, y, x + w, y + h, r); ctx.arcTo(x + w, y + h, x, y + h, r);
+  ctx.arcTo(x, y + h, x, y, r); ctx.arcTo(x, y, x + w, y, r); ctx.closePath();
+}
+function drawRefreshGlyph(ctx, cx, cy, r, color){
+  ctx.save(); ctx.strokeStyle = color; ctx.lineWidth = 2.4; ctx.lineCap = 'round';
+  ctx.beginPath(); ctx.arc(cx, cy, r, Math.PI * 0.35, Math.PI * 1.85); ctx.stroke();
+  const a = Math.PI * 1.85, ex = cx + r * Math.cos(a), ey = cy + r * Math.sin(a);
+  const px = Math.cos(a - Math.PI / 2), py = Math.sin(a - Math.PI / 2);
+  ctx.beginPath(); ctx.moveTo(ex, ey); ctx.lineTo(ex - 8 * px - 3 * Math.cos(a), ey - 8 * py - 3 * Math.sin(a));
+  ctx.moveTo(ex, ey); ctx.lineTo(ex - 8 * px, ey - 8 * py); ctx.stroke(); ctx.restore();
+}
+function drawNormalCard(ctx, m, c){
+  const { P, cardPadX:cx, cardPadY:cy, fontH1, lh1, fontSub, lhSub, fontMeta, lhMeta, prizeH, prizeGap } = m;
+  rrect(ctx, c.x, c.y, c.w, c.h, 14); ctx.fillStyle = P.sChigh; ctx.fill();
+  ctx.strokeStyle = P.outline; ctx.lineWidth = 1; ctx.stroke();
+  ctx.textBaseline = 'middle'; ctx.textAlign = 'left';
+  /* 奖品 chip 画在首行右侧（与网页端一致）：主文本首行预先留出宽度（模型已按 110px 让位换行），
+     chip 与主文本同行不重叠；奖品名已截断到 ≤100px，超出部分显示省略号 */
+  if(c.prize){
+    ctx.font = '500 13px ' + bodyFont(); const pw = ctx.measureText(c.prize).width + 20;
+    const chipX = c.x + c.w - cx - pw;
+    rrect(ctx, chipX, c.y + cy - 4, pw, prizeH, prizeH / 2);
+    ctx.fillStyle = P.tertiaryCont; ctx.fill();
+    ctx.fillStyle = P.onTertiaryCont; ctx.fillText(c.prize, chipX + 10, c.y + cy - 4 + prizeH / 2);
+  }
+  let ty = c.y + cy + fontH1 * 0.5;
+  ctx.fillStyle = P.onSurface; ctx.font = '600 ' + fontH1 + 'px ' + bodyFont();
+  for(const ln of c.mainLines){ ctx.fillText(ln, c.x + cx, ty); ty += lh1; }
+  ty += 2;
+  if(c.subLines.length){ ctx.fillStyle = P.onVar; ctx.font = '400 ' + fontSub + 'px ' + bodyFont();
+    for(const ln of c.subLines){ ctx.fillText(ln, c.x + cx, ty); ty += lhSub; } ty += 4; }
+  if(c.metaLines.length){ ctx.fillStyle = P.onVar; ctx.font = '400 ' + fontMeta + 'px ' + bodyFont();
+    for(const ln of c.metaLines){ ctx.fillText(ln, c.x + cx, ty); ty += lhMeta; } }
+}
+function drawGroupCard(ctx, m, c){
+  const { P, cardPadX:cx, cardPadY:cy, fontH1, lh1, fontSub, lhSub } = m;
+  rrect(ctx, c.x, c.y, c.w, c.h, 14); ctx.fillStyle = P.sChigh; ctx.fill();
+  ctx.strokeStyle = P.outline; ctx.lineWidth = 1; ctx.stroke();
+  ctx.textBaseline = 'middle'; ctx.textAlign = 'left';
+  let ty = c.y + cy + fontH1 * 0.5;
+  /* titleLines 已含「标题 · N 人」—— 布局在模型里算好，这里只负责画 */
+  ctx.fillStyle = P.onSurface; ctx.font = '600 ' + fontH1 + 'px ' + bodyFont();
+  for(const ln of c.titleLines){ ctx.fillText(ln, c.x + cx, ty); ty += lh1; }
+  ty += 6;
+  ctx.fillStyle = P.primary; ctx.font = '400 ' + fontSub + 'px ' + bodyFont();
+  for(const ln of (c.chipLines || [])){ ctx.fillText('· ' + ln, c.x + cx, ty); ty += lhSub; }
+}
+function renderPoster(ctx, m){
+  const { w, h, pad, innerW, headH, P } = m;
+  ctx.fillStyle = P.surface; ctx.fillRect(0, 0, w, h);
+  ctx.fillStyle = P.primaryCont; ctx.fillRect(0, 0, w, 6);
+  const bx = pad + 30, by = pad + 30, br = 26;
+  ctx.fillStyle = P.primary; ctx.beginPath(); ctx.arc(bx, by, br, 0, Math.PI * 2); ctx.fill();
+  drawRefreshGlyph(ctx, bx, by, br - 9, P.onPrimary);
+  ctx.textBaseline = 'middle'; ctx.textAlign = 'left';
+  ctx.fillStyle = P.onSurface; ctx.font = '600 22px ' + bodyFont();
+  ctx.fillText(m.title, bx + br + 16, by - 9);
+  ctx.fillStyle = P.onVar; ctx.font = '400 14px ' + bodyFont();
+  ctx.fillText(m.subtitle, bx + br + 16, by + 13);
+  ctx.textAlign = 'right'; ctx.fillStyle = P.onVar; ctx.font = '400 13px ' + bodyFont();
+  ctx.fillText(m.time, w - pad, by - 4); ctx.textAlign = 'left';
+  for(const c of m.cards){ if(c.type === 'group') drawGroupCard(ctx, m, c); else drawNormalCard(ctx, m, c); }
+  let footY = h - pad - 28;
+  if(m.restNote){                                   /* 卡片数超上限的注记：紧贴页脚线上方 */
+    ctx.fillStyle = P.onVar; ctx.font = '400 13px ' + bodyFont(); ctx.textAlign = 'left';
+    footY -= 22;
+    ctx.fillText(m.restNote, pad, footY);
+  }
+  const fy = Math.max(footY, h - pad - 28);
+  ctx.strokeStyle = P.outline; ctx.lineWidth = 1; ctx.beginPath(); ctx.moveTo(pad, fy); ctx.lineTo(w - pad, fy); ctx.stroke();
+  ctx.fillStyle = P.onVar; ctx.font = '400 13px ' + bodyFont();
+  ctx.fillText('由 随机抽取生成器 v' + m.version + ' 生成', pad, fy + 18);
+}
+function exportPoster(){
+  if(!S.last || !S.last.length) return toast('暂无结果可导出分享图');
+  const model = buildPosterModel(S.last, S.tpl);
+  lastPosterModel = model;
+  const cv = document.createElement('canvas');
+  /* dpr 自适应下调：画布单边硬上限 32767px（部分旧 iOS 还有总像素上限）。
+     模型已限 40 张卡，但极端长文本仍可能推高总高；越界时依次降 2 → 1.5 → 1，
+     仍超则截断并提示（宁可少画一段也不能导出空白图） */
+  let dpr = 2;
+  while(dpr > 1 && (model.w * dpr > 16384 || model.h * dpr > 16384)) dpr = dpr === 2 ? 1.5 : 1;
+  if(model.w * dpr > 32766 || model.h * dpr > 32766){
+    model.h = Math.floor(32766 / dpr);
+    toast('结果过多，分享图已截断展示');
+  }
+  cv.width = Math.round(model.w * dpr); cv.height = Math.round(model.h * dpr);
+  const ctx = (typeof cv.getContext === 'function') ? cv.getContext('2d') : null;
+  if(!ctx){ toast('当前环境不支持生成图片'); return; }
+  ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  try{ renderPoster(ctx, model); }catch(e){ toast('生成分享图失败：' + ((e && e.message) || e)); return; }
+  let url = '';
+  try{ url = cv.toDataURL('image/png'); }catch(e){ toast('当前环境不支持导出图片（请使用现代浏览器）'); return; }
+  posterCanvas = cv;
+  showPosterModal(url);
+}
+function showPosterModal(url){
+  const img = $('#posterImg'); if(img) img.src = url;
+  const modal = $('#posterModal'); if(modal) modal.hidden = false;
+}
+
 /* ---------------- 动作 ---------------- */
 $('#drawBtn').onclick = () => { roll ? stopRoll() : doDraw(); };   // 手动停止模式下同一按钮即停
 $('#resetBtn').onclick = () => { resetDrawn(S.tpl); toast('已清除「' + cur().name + '」的已抽取记录'); };
 addEventListener('keydown', e => {
+  /* 分享图预览弹窗打开时：Esc 关闭；屏蔽 Ctrl+Enter（避免在弹窗底下悄悄开一轮抽取） */
+  const pm = $('#posterModal');
+  if(pm && !pm.hidden){
+    if(e.key === 'Escape'){ e.preventDefault(); pm.hidden = true; }
+    return;
+  }
   if((e.ctrlKey || e.metaKey) && e.key === 'Enter'){ e.preventDefault(); roll ? stopRoll() : doDraw(); }
 });
 
@@ -2556,6 +2901,41 @@ if(confettiBox){
     if(!S.confetti){ cfParts = []; if(ctxCf) ctxCf.clearRect(0, 0, cfW, cfH); }
   };
 }
+
+/* 抽取音效开关（默认开启，记忆偏好） */
+const soundBox = $('#soundOn');
+S.sound = (() => { try{ return localStorage.getItem('rd-sound-v1') !== '0'; }catch(e){ return true; } })();
+if(soundBox){
+  soundBox.checked = S.sound;
+  soundBox.onchange = () => {
+    S.sound = soundBox.checked;
+    try{ localStorage.setItem('rd-sound-v1', S.sound ? '1' : '0'); }catch(e){}
+    if(S.sound){ const ac = audioCtx(); if(ac && ac.state === 'suspended') ac.resume(); playStart(); }   // 开启时给个反馈音
+  };
+}
+
+/* 分享图导出：按钮、预览弹窗、下载与复制 */
+function fileStamp(){ return new Date().toISOString().slice(0, 19).replace(/[:T]/g, '-'); }
+$('#posterBtn').onclick = () => exportPoster();
+$('#posterClose').onclick = () => { const m = $('#posterModal'); if(m) m.hidden = true; };
+$('#posterBackdrop').onclick = () => { const m = $('#posterModal'); if(m) m.hidden = true; };
+$('#posterDownload').onclick = () => {
+  const img = $('#posterImg'); if(!img || !img.src) return;
+  const a = document.createElement('a');
+  a.href = img.src; a.download = `分享图_${cur().name}_${fileStamp()}.png`;
+  a.click();
+};
+$('#posterCopy').onclick = async () => {
+  try{
+    if(posterCanvas && typeof posterCanvas.toBlob === 'function'){
+      posterCanvas.toBlob(async b => {
+        if(!b){ toast('复制失败，请改用下载'); return; }
+        try{ await navigator.clipboard.write([new ClipboardItem({ 'image/png': b })]); toast('已复制图片到剪贴板'); }
+        catch(e){ toast('复制失败，请改用下载'); }
+      });
+    } else toast('当前环境不支持复制图片');
+  }catch(e){ toast('复制失败，请改用下载'); }
+};
 
 function renderAll(){
   // 先清结果再结算：cancelRoll / flushPending 会补结算上一批，
